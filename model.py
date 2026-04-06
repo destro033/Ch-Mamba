@@ -60,10 +60,10 @@ class ChannelMixup(nn.Module):
             B, V, L = x.shape
             perm = torch.randperm(V)
 
-            print("Mixup perm: ", perm) 
+            #print("Mixup perm: ", perm) 
 
             lambda_ = torch.normal(mean=0, std=self.sigma, size=(V,)).to(x.device)
-            print("Mixup lambda:", lambda_.shape) #(num_channels)
+            #print("Mixup lambda:", lambda_.shape) #(num_channels)
 
             x_mixed = x + lambda_.unsqueeze(1) * x[:, perm]
             return x_mixed
