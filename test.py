@@ -30,7 +30,7 @@ BATCH_SIZE = 32
 
 FLIGHT_1 = 17
 FLIGHT_2 = 18
-TRAJECTORY_FLIGHT = 17
+
 
 # =========================
 # Device
