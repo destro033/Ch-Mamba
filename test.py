@@ -1,5 +1,6 @@
 import joblib
 import torch
+import matplotlib.pyplot as plt
 
 from model import CMamba
 from arguments import args
@@ -28,7 +29,6 @@ BATCH_SIZE = 32
 
 FLIGHT_1 = 17
 FLIGHT_2 = 18
-
 
 # =========================
 # Device
@@ -112,7 +112,6 @@ y_pred_17, y_true_17 = get_trajectory_for_plot(
 
 plot_3d_trajectory(y_pred_17, y_true_17, forecast_step=0)
 
-
 # =========================
 # 3D trajectory - Flight 18
 # =========================
@@ -122,3 +121,8 @@ y_pred_18, y_true_18 = get_trajectory_for_plot(
 )
 
 plot_3d_trajectory(y_pred_18, y_true_18, forecast_step=0)
+
+# =========================
+# Show all plots at the end
+# =========================
+plt.show()
