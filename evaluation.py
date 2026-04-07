@@ -130,8 +130,8 @@ def plot_mae_bars(mae_17, mae_18):
     width = 0.35
 
     fig, ax = plt.subplots(figsize=(9, 4))
-    bars1 = ax.bar(x - width/2, mae_17, width, label='Complicated Flight')
-    bars2 = ax.bar(x + width/2, mae_18, width, label='Simple Flight')
+    bars1 = ax.bar(x - width/2, mae_17, width, label='Complicated Flight', color = 'blue')
+    bars2 = ax.bar(x + width/2, mae_18, width, label='Simple Flight', color = 'red')
 
     ax.set_ylabel('MAE (meters)')
     ax.set_xticks(x)
@@ -167,7 +167,7 @@ def plot_ade_bars(ade_17, ade_18):
     ade_values = [ade_17, ade_18]
 
     plt.figure(figsize=(6, 5))
-    bars = plt.bar(flights, ade_values)
+    bars = plt.bar(flights, ade_values, color=['blue','red'])
 
     for bar in bars:
         height = bar.get_height()
@@ -189,8 +189,8 @@ def plot_error_vs_forecast(error_17, error_18):
     forecast_steps = np.arange(1, len(error_17) + 1)
 
     plt.figure(figsize=(9, 4))
-    plt.plot(forecast_steps, error_17, label='Complicated Flight')
-    plt.plot(forecast_steps, error_18, label='Simple Flight')
+    plt.plot(forecast_steps, error_17, label='Complicated Flight', color = 'blue')
+    plt.plot(forecast_steps, error_18, label='Simple Flight', color = 'red')
     plt.xlabel('Forecast Step')
     plt.ylabel('Euclidean Error (meters)')
     plt.legend()
