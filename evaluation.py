@@ -114,36 +114,6 @@ def compute_euclidean_error_per_timestep(model, df, flight_id, feature_cols, sca
     return errors_per_timestep
 
 
-def compute_cdf_first_forecast(model, df, flight_id, feature_cols, scaler, device, input_length=96, forecast_length=96, batch_size=32):
-    loader = prepare_flight_loader(
-        df, flight_id, feature_cols, scaler, input_length, forecast_length, batch_size
-    )
-    y_pred, y_true = predict_for_flight(model, loader, device)
-
-    y_pred_0 = y_pred[:, :, 0].numpy()
-    y_true_0 = y_true[:, :, 0].numpy()
-
-    y_pred_unscaled = scaler.inverse_transform(y_pred_0)
-    y_true_unscaled = scaler.inverse_transform(y_true_0)
-
-    lat_deg = np.mean(y_true_unscaled[:, 1])
-    lat_rad = np.deg2rad(lat_deg)
-
-    disp = y_pred_unscaled - y_true_unscaled
-    disp[:, 0] *= 111320 * np.cos(lat_rad)
-    disp[:, 1] *= 111320
-
-    euclidean_dist = np.linalg.norm(disp, axis=1)
-
-    sorted_dist = np.sort(euclidean_dist)
-    cdf = np.arange(1, len(sorted_dist) + 1) / len(sorted_dist)
-
-    d80 = np.percentile(euclidean_dist, 80)
-    d90 = np.percentile(euclidean_dist, 90)
-
-    return sorted_dist, cdf, d80, d90
-
-
 def get_trajectory_for_plot(model, df, flight_id, feature_cols, scaler, device, input_length=96, forecast_length=96, batch_size=32):
     loader = prepare_flight_loader(
         df, flight_id, feature_cols, scaler, input_length, forecast_length, batch_size
@@ -225,21 +195,6 @@ def plot_error_vs_forecast(error_17, error_18):
     plt.ylabel('Euclidean Error (meters)')
     plt.legend()
     plt.grid(alpha=0.3)
-    plt.show()
-
-
-def plot_cdf(dist_17, cdf_17, dist_18, cdf_18):
-    plt.figure(figsize=(6, 5))
-    plt.plot(dist_17, cdf_17, label='Complicated Flight', linewidth=2)
-    plt.plot(dist_18, cdf_18, label='Simple Flight', linewidth=2)
-
-    plt.xlabel('Euclidean distance (meters)')
-    plt.ylabel('CDF')
-    plt.grid(alpha=0.3)
-    plt.legend()
-    plt.tight_layout()
-    plt.xlim(0, 15)
-    plt.xticks(np.arange(0, 16, 1))
     plt.show()
 
 
