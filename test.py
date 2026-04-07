@@ -1,7 +1,8 @@
 import joblib
 import torch
 
-from model import ModelArgs, CMamba
+from model import CMamba
+from arguments import args
 from evaluation import (
     load_test_dataframe,
     compute_mae_for_flight,
@@ -43,17 +44,6 @@ print("Using:", device)
 # =========================
 df = load_test_dataframe(CSV_PATH, sep=";")
 feature_cols = ['position_x', 'position_y', 'position_z']
-
-# =========================
-# Load args
-# =========================
-args_dict = torch.load(ARGS_PATH, map_location="cpu")
-
-args_dict.pop("v", None)
-args_dict.pop("num_patches", None)
-args_dict.pop("d_inner", None)
-
-args = ModelArgs(**args_dict)
 
 # =========================
 # Load model
