@@ -116,26 +116,6 @@ error_18 = compute_euclidean_error_per_timestep(
 plot_error_vs_forecast(error_17, error_18)
 
 # =========================
-# CDF
-# =========================
-dist_17, cdf_17, d80_17, d90_17 = compute_cdf_first_forecast(
-    model, df, FLIGHT_1, feature_cols, scaler, device,
-    input_length=INPUT_LENGTH, forecast_length=FORECAST_LENGTH, batch_size=BATCH_SIZE
-)
-
-dist_18, cdf_18, d80_18, d90_18 = compute_cdf_first_forecast(
-    model, df, FLIGHT_2, feature_cols, scaler, device,
-    input_length=INPUT_LENGTH, forecast_length=FORECAST_LENGTH, batch_size=BATCH_SIZE
-)
-
-print(f"Flight {FLIGHT_1} – 80% CDF distance: {d80_17:.2f} m")
-print(f"Flight {FLIGHT_1} – 90% CDF distance: {d90_17:.2f} m")
-print(f"Flight {FLIGHT_2} – 80% CDF distance: {d80_18:.2f} m")
-print(f"Flight {FLIGHT_2} – 90% CDF distance: {d90_18:.2f} m")
-
-plot_cdf(dist_17, cdf_17, dist_18, cdf_18)
-
-# =========================
 # 3D trajectory
 # =========================
 y_pred_real, y_true_real = get_trajectory_for_plot(
