@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch.optim as optim
 from data_preprocessing_patchtst import create_dataloaders_from_csv
 from model_patchtst import Model
-from arguments_patchtst import configs
+from arguments_patchtst import Config
 import pandas as pd
 import joblib
 
@@ -20,6 +20,8 @@ train_loader, val_loader, scaler = create_dataloaders_from_csv(
 
 train_losses = []
 val_losses = []
+
+configs = Config()
 
 model = Model(configs).to(device)
 criterion = nn.MSELoss()
