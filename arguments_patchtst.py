@@ -10,6 +10,6 @@ class Config:
     dropout = 0.1
     factor = 1
     activation = "gelu"
-    e_layers = "2 
+    e_layers = 2 
     patch_len = 16
     stride = 8
