@@ -42,7 +42,7 @@ for epoch in range(epochs):
         X_batch, y_batch = X_batch.to(device), y_batch.to(device)
 
         optimizer.zero_grad()
-        output = model(X_batch)
+        output = model(X_batch, None, None, None)
         loss = criterion(output, y_batch)
         loss.backward()
 
@@ -60,7 +60,7 @@ for epoch in range(epochs):
     with torch.no_grad():
         for (X_batch, y_batch) in val_loader:
             X_batch, y_batch = X_batch.to(device), y_batch.to(device)
-            output = model(X_batch)
+            output = model(X_batch, None, None, None)
             loss = criterion(output, y_batch)
             val_loss += loss.item()
 
