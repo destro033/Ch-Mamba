@@ -1,350 +1,374 @@
-"""
-Glossary:
-    b: batch size                       
-    l: sequence length                 
-    d or d_model: hidden dim
-    n or d_state: latent state dim      
-    expand: expansion factor            
-    d_in or d_inner: d * expand         
-    A, B, C, D: state space parameters  
-                                        
-    Δ or delta: input-dependent step size
-    dt_rank: rank of Δ                 
-
-"""
-
-import math
 import torch
-import torch.nn as nn
+from torch import nn
+from layers.Embed import PatchEmbedding
+from layers.CMambaEncoder import CMambaEncoder
+import math
 import torch.nn.functional as F
-from einops import rearrange, repeat, einsum
 
-class ModelArgs:
-    def __init__(self, d_model=128, n_layer=4, seq_len=96, d_state=16, expand=2, dt_rank='auto',
-                 d_conv=4, pad_multiple=8, conv_bias=True, bias=False,
-                 num_channels=24, patch_len=16, stride=8, forecast_len=96, sigma=0.5, reduction_ratio=8, verbose=False):
-        self.d_model = d_model
-        self.n_layer = n_layer
-        self.seq_len = seq_len
-        self.d_state = d_state
-        self.v = verbose
-        self.expand = expand
-        self.dt_rank = dt_rank
-        self.d_conv = d_conv
-        self.pad_multiple = pad_multiple
-        self.conv_bias = conv_bias
-        self.bias = bias
-        self.num_channels = num_channels
+
+class PositionalEmbedding(nn.Module):
+    def __init__(self, d_model, max_len=5000):
+        super(PositionalEmbedding, self).__init__()
+        # Compute the positional encodings once in log space.
+        pe = torch.zeros(max_len, d_model).float()
+        pe.require_grad = False
+
+        position = torch.arange(0, max_len).float().unsqueeze(1)
+        div_term = (torch.arange(0, d_model, 2).float()
+                    * -(math.log(10000.0) / d_model)).exp()
+
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+
+        pe = pe.unsqueeze(0)
+        self.register_buffer('pe', pe)
+
+    def forward(self, x):
+        return self.pe[:, :x.size(1)]
+
+
+class PatchEmbedding(nn.Module):
+    """
+    ReparamModule, similar to https://arxiv.org/pdf/2211.14730
+    """
+    def __init__(self, d_model, patch_len, stride, padding, dropout):
+        super(PatchEmbedding, self).__init__()
+        # Patching
         self.patch_len = patch_len
         self.stride = stride
-        self.forecast_len = forecast_len
-        self.sigma = sigma
-        self.reduction_ratio = reduction_ratio
-        self.num_patches = (self.seq_len - self.patch_len) // self.stride + 1
+        self.padding_patch_layer = nn.ReplicationPad1d((0, padding))
 
-        self.d_inner = int(self.expand * self.d_model)
-        
-        if self.dt_rank == 'auto':
-            self.dt_rank = math.ceil(self.d_model / 16)
-            
-        if self.forecast_len % self.pad_multiple != 0:
-            self.forecast_len += (self.pad_multiple - self.forecast_len % self.pad_multiple)
+        # Backbone, Input encoding: projection of feature vectors onto a d-dim vector space
+        self.value_embedding = nn.Linear(patch_len, d_model, bias=False)
 
-class ChannelMixup(nn.Module):
-    def __init__(self, sigma=0.5):
-        super().__init__()
-        self.sigma = sigma
+        # Positional embedding
+        self.position_embedding = PositionalEmbedding(d_model)
+
+        # Residual dropout
+        self.dropout = nn.Dropout(dropout)
 
     def forward(self, x):
-        if self.training:
-            B, V, L = x.shape
-            perm = torch.randperm(V)
+        # do patching
+        n_vars = x.shape[1]
+        x = self.padding_patch_layer(x)
+        x = x.unfold(dimension=-1, size=self.patch_len, step=self.stride)
+        x = torch.reshape(x, (x.shape[0] * x.shape[1], x.shape[2], x.shape[3]))
+        # Input encoding
+        x = self.value_embedding(x) + self.position_embedding(x)
 
-            #print("Mixup perm: ", perm) 
+        return self.dropout(x), n_vars
 
-            lambda_ = torch.normal(mean=0, std=self.sigma, size=(V,)).to(x.device)
-            #print("Mixup lambda:", lambda_.shape) #(num_channels)
 
-            x_mixed = x + lambda_.unsqueeze(1) * x[:, perm]
-            return x_mixed
-        return x
-
-class ChannelAttention(nn.Module):
-    def __init__(self, num_channels, reduction_ratio=8):
+class GDDMLP(nn.Module):
+    def __init__(self, n_vars, reduction=2, avg_flag=True, max_flag=True):
         super().__init__()
+        self.avg_flag = avg_flag
+        self.max_flag = max_flag
         self.avg_pool = nn.AdaptiveAvgPool1d(1)
         self.max_pool = nn.AdaptiveMaxPool1d(1)
-        self.fc1 = nn.Linear(num_channels, num_channels // reduction_ratio)
-        self.relu = nn.ReLU()
-        self.fc2 = nn.Linear(num_channels // reduction_ratio, num_channels)
+           
+        self.fc_sc = nn.Sequential(nn.Linear(n_vars, n_vars // reduction, bias=False),
+                               nn.GELU(),
+                               nn.Linear(n_vars // reduction, n_vars, bias=False))
+        self.fc_sf = nn.Sequential(nn.Linear(n_vars, n_vars // reduction, bias=False),
+                               nn.GELU(),
+                               nn.Linear(n_vars // reduction, n_vars, bias=False))
         self.sigmoid = nn.Sigmoid()
 
+        #self.initialize_weights()
+
+    def initialize_weights(self):
+        for layer in self.fc_sc:
+            if isinstance(layer, nn.Linear):
+                nn.init.constant_(layer.weight, 0)
+
+        for layer in self.fc_sf:
+            if isinstance(layer, nn.Linear):
+                nn.init.constant_(layer.weight, 0)
+
     def forward(self, x):
+        b, n, p, d = x.shape
+        scale = torch.zeros_like(x)
+        shift = torch.zeros_like(x)
+        if self.avg_flag:
+            sc = self.fc_sc(self.avg_pool(x.reshape(b*n, p, d)).reshape(b, n, p).permute(0, 2, 1)).permute(0, 2, 1)
+            sf = self.fc_sf(self.avg_pool(x.reshape(b*n, p, d)).reshape(b, n, p).permute(0, 2, 1)).permute(0, 2, 1)
+            scale += sc.unsqueeze(-1)
+            shift += sf.unsqueeze(-1)
+        if self.max_flag:
+            sc = self.fc_sc(self.max_pool(x.reshape(b*n, p, d)).reshape(b, n, p).permute(0, 2, 1)).permute(0, 2, 1)
+            sf = self.fc_sf(self.max_pool(x.reshape(b*n, p, d)).reshape(b, n, p).permute(0, 2, 1)).permute(0, 2, 1)
+            scale += sc.unsqueeze(-1)
+            shift += sf.unsqueeze(-1)
+        return self.sigmoid(scale) * x + self.sigmoid(shift)
 
-        avg_pool_out = self.avg_pool(x)
-        #print("avg_pool output shape:", avg_pool_out.shape) #(B, d_model, 1)
 
-        avg_pool_out = avg_pool_out.squeeze(-1)
-        #print("avg_pool squeezed shape:", avg_pool_out.shape) #(B, d_model)
 
-        avg_fc1 = self.fc1(avg_pool_out)
-        #print("avg fc1 output shape:", avg_fc1.shape) #(B, d_model/2)
 
-        avg_relu = self.relu(avg_fc1)
-        #print("avg relu output shape:", avg_relu.shape) #(B, d_model/2)
-
-        avg_out = self.fc2(avg_relu)
-        #print("avg fc2 output shape:", avg_out.shape) #(B, d_model)
-
-        max_pool_out = self.max_pool(x)
-        #print("max_pool output shape:", max_pool_out.shape) #(B, d_model, 1)
-
-        max_pool_out = max_pool_out.squeeze(-1)
-        #print("max_pool squeezed shape:", max_pool_out.shape) #(B, d_model)
-
-        max_fc1 = self.fc1(max_pool_out)
-        #print("max fc1 output shape:", max_fc1.shape) #(B, d_model/2)
-
-        max_relu = self.relu(max_fc1)
-        #print("max relu output shape:", max_relu.shape) #(B, d_model/2)
-
-        max_out = self.fc2(max_relu)
-        #print("max fc2 output shape:", max_out.shape) #(B, d_model)
-
-        out = avg_out + max_out
-        #print("sum shape:", out.shape) #(B, d_model)
-
-        out = self.sigmoid(out)
-        #print("sigmoid output shape:", out.shape) #(B, d_model)
-
-        out = out.unsqueeze(-1)
-        #print("final output shape:", out.shape) #(B, d_model, 1)
-
-        return out
-
-class PatchMamba(nn.Module):
-    def __init__(self, args: ModelArgs):
+class CMambaEncoder(nn.Module):
+    def __init__(self, configs):
         super().__init__()
-        self.args = args
-        self.layers = nn.ModuleList([MambaBlock(args) for _ in range(args.n_layer)])
+
+        self.configs = configs
+
+        self.layers = nn.ModuleList([CMambaBlock(configs) for _ in range(configs.e_layers)])
 
     def forward(self, x):
+        # x : [bs * nvars, patch_num, d_model]
+
         for layer in self.layers:
-            x = x + layer(x)
+            x = layer(x)
+
+        x = F.silu(x)
+
         return x
 
 class CMambaBlock(nn.Module):
-    def __init__(self, args: ModelArgs):
+    def __init__(self, configs):
         super().__init__()
-        self.args = args
-        self.patch_mamba = PatchMamba(args)
-        self.channel_attention = ChannelAttention(args.d_model, args.reduction_ratio)
-        self.norm = RMSNorm(args.d_model)
+
+        self.mixer = MambaBlock(configs)
+        self.norm = RMSNorm(configs.d_model)
+
+        self.gddmlp = configs.gddmlp
+        if self.gddmlp:
+            print("Insert GDDMLP")
+            self.GDDMLP = GDDMLP(configs.c_out, configs.reduction, 
+                                                 configs.avg, configs.max)
+        self.dropout = nn.Dropout(configs.dropout)
+        self.configs = configs
 
     def forward(self, x):
-        x = self.patch_mamba(x)
-        attn = self.channel_attention(x.permute(0, 2, 1))
-        x = x * attn.permute(0, 2, 1)
-        return self.norm(x)
+        # x : [bs * nvars, patch_num, d_model]
 
-class CMamba(nn.Module):
-    def __init__(self, args: ModelArgs):
-        super().__init__()
-        self.args = args
-        self.channel_mixup = ChannelMixup(args.sigma)
-        self.patch_embedding = nn.Linear(args.patch_len * args.num_channels, args.d_model)
-        self.pos_encoding = nn.Parameter(torch.randn(1, args.num_patches, args.d_model))
-        
-        self.c_mamba_blocks = nn.ModuleList([CMambaBlock(args) for _ in range(args.n_layer)])
-        
-        self.norm_f = RMSNorm(args.d_model)
-        self.output_layer = nn.Linear(args.d_model * args.num_patches, args.num_channels * args.forecast_len)
+        # output : [bs * nvars, patch_num, d_model]
 
-    def forward(self, input_ids):
+        output = self.mixer(self.norm(x)) 
 
-        print("input_ids", input_ids.shape) if self.args.v else None  #(B,V,L)
-
-        x = self.channel_mixup(input_ids)
-        print("after channel mixup", x.shape) if self.args.v else None  #(B,V,L)
-
-        # Patching
-        B, V, L = x.shape
-        P = self.args.patch_len
-        S = self.args.stride
-
-        print("Patch len", P) if self.args.v else None
-        print("stride", S) if self.args.v else None
-
-        # Manual patching
-        patches = []
-        for i in range(0, L - P + 1, S):
-            patch = x[:, :, i:i+P].reshape(B, -1)
-            patches.append(patch)
-        num_patches = (L - P) // S + 1
-        print(f"Calculated number of patches: {num_patches}") if self.args.v else None
-
-        x = torch.stack(patches, dim=1)  # (B, num_patches, V*P)
-        print("after patching", x.shape) if self.args.v else None
-
-        # Patch embedding
-        x = self.patch_embedding(x)  # (B, num_patches, d_model)
-        print("after patch embedding", x.shape) if self.args.v else None
-
-        # Adjust positional encoding
-        pos_encoding = self.pos_encoding[:, :x.size(1), :]
-        print(f"Positional encoding shape: {pos_encoding.shape}") if self.args.v else None #(1, num_patches, d_model)
-
-        # Add positional encoding
-        x = x + pos_encoding
-        print("after positional encoding", x.shape) if self.args.v else None  #(B, num_patches, d_model)
-
-        # Apply CH-Mamba blocks
-        for block in self.c_mamba_blocks:
-            x = block(x)
-        print("after CH-Mamba blocks", x.shape) if self.args.v else None #(B, num_patches, d_model)
-
-        x = self.norm_f(x)
-        print("after norm_f", x.shape) if self.args.v else None  #(B, num_patches, d_model)
-
-        # Output layer
-        x = x.reshape(x.shape[0], -1)
-        print("before output layer", x.shape) if self.args.v else None  #(B, num_patches*d_model)
-
-        logits = self.output_layer(x)
-        print("after output layer", logits.shape) if self.args.v else None #(B, num_channels*forecast_length )
-
-        logits = logits.reshape(-1, self.args.num_channels, self.args.forecast_len)
-        print("final logits", logits.shape) if self.args.v else None  #(b, num_channels, forecast_length)
-
-        return logits
-
-class MambaBlock(nn.Module):
-    def __init__(self, args: ModelArgs):
-        super().__init__()
-        self.args = args
-
-        self.in_proj = nn.Linear(args.d_model, args.d_inner * 2, bias=args.bias)
-
-        self.conv1d = nn.Conv1d(
-            in_channels=args.d_inner,
-            out_channels=args.d_inner,
-            bias=args.conv_bias,
-            kernel_size=args.d_conv,
-            groups=args.d_inner,
-            padding=args.d_conv - 1,
-        )
-
-        self.x_proj = nn.Linear(args.d_inner, args.dt_rank + args.d_state * 2, bias=False)
-        self.dt_proj = nn.Linear(args.dt_rank, args.d_inner, bias=True)
-
-        A = repeat(torch.arange(1, args.d_state + 1), 'n -> d n', d=args.d_inner)
-        self.A_log = nn.Parameter(torch.log(A))
-        self.D = nn.Parameter(torch.ones(args.d_inner))
-        self.out_proj = nn.Linear(args.d_inner, args.d_model, bias=args.bias)
-
-    def forward(self, x):
-        (b, l, d) = x.shape
-        #print("Mamba block input shape: ", x.shape)        #(B, num_patches, d_model)
-        
-        x_and_res = self.in_proj(x)
-        (x, res) = x_and_res.split(split_size=[self.args.d_inner, self.args.d_inner], dim=-1)
-        #print("Mamba block split shape x: ", x.shape)      #(B, num_patches, d_inner)
-        #print("Mamba block split shape res: ", res.shape)  #(B, num_patches, d_inner)
-
-        x = rearrange(x, 'b l d_in -> b d_in l')
-        x = self.conv1d(x)[:, :, :l]
-        x = rearrange(x, 'b d_in l -> b l d_in')
-        
-        x = F.silu(x)
-
-        y = self.ssm(x)
-        
-        y = y * F.silu(res)
-        
-        output = self.out_proj(y)
-        #print("Mamba block output shape: ", output.shape)
-
+        if self.gddmlp:
+            # output : [bs, nvars, patch_num, d_model]
+            output = self.GDDMLP(output.reshape(-1, self.configs.c_out, 
+                                                          output.shape[-2], output.shape[-1]))
+            # output : [bs * nvars, patch_num, d_model]
+            output = output.reshape(-1, output.shape[-2], output.shape[-1])
+        output = self.dropout(output)
+        output += x
         return output
 
+class MambaBlock(nn.Module):
+    """
+    MambaModule, similar to https://arxiv.org/pdf/2402.18959
+    """
+    def __init__(self, configs):
+        super().__init__()
+
+        self.configs = configs
+
+        # projects block input from D to 2*ED (two branches)
+        self.in_proj = nn.Linear(configs.d_model, 2 * configs.d_ff, bias=configs.bias)
+        
+        # projects x to input-dependent Δ, B, C, D
+        self.x_proj = nn.Linear(configs.d_ff, configs.dt_rank + 2 * configs.d_state + configs.d_ff, bias=False)
+
+        # projects Δ from dt_rank to d_ff
+        self.dt_proj = nn.Linear(configs.dt_rank, configs.d_ff, bias=True)
+
+        # dt initialization
+        # dt weights
+        dt_init_std = configs.dt_rank**-0.5 * configs.dt_scale
+        if configs.dt_init == "constant":
+            nn.init.constant_(self.dt_proj.weight, dt_init_std)
+        elif configs.dt_init == "random":
+            nn.init.uniform_(self.dt_proj.weight, -dt_init_std, dt_init_std)
+        else:
+            raise NotImplementedError
+        
+        # dt bias
+        dt = torch.exp(
+            torch.rand(configs.d_ff) * (math.log(configs.dt_max) - math.log(configs.dt_min)) + math.log(configs.dt_min)
+        ).clamp(min=configs.dt_init_floor)
+        inv_dt = dt + torch.log(-torch.expm1(-dt)) # inverse of softplus: https://github.com/pytorch/pytorch/issues/72759
+        with torch.no_grad():
+            self.dt_proj.bias.copy_(inv_dt)
+
+        # S4D real initialization
+        A = torch.arange(1, configs.d_state + 1, dtype=torch.float32).unsqueeze(0)
+
+        self.A_log = nn.Parameter(torch.log(A))
+
+        # projects block output from ED back to D
+        self.out_proj = nn.Linear(configs.d_ff, configs.d_model, bias=configs.bias)
+
+    def forward(self, x):
+        # x : [bs * nvars, patch_num, d_model]
+        
+        # y : [bs * nvars, patch_num, d_model]
+
+        _, L, _ = x.shape
+
+        xz = self.in_proj(x) # [bs * nvars, patch_num, 2 * d_ff]
+        x, z = xz.chunk(2, dim=-1) # [bs * nvars, patch_num, d_ff], [bs * nvars, patch_num, d_ff]
+
+        # x branch
+        x = F.silu(x)
+        y = self.ssm(x)
+
+        # z branch
+        z = F.silu(z)
+
+        output = y * z
+        output = self.out_proj(output) # [bs * nvars, patch_num, d_ff]
+
+        return output
+    
     def ssm(self, x):
-        """
+        # x : [bs * nvars, patch_num, d_ff]
 
-        Args:
-            x: shape (b, l, d_in)    (See Glossary at top for definitions of b, l, d_in, n...)
+        # y : [bs * nvars, patch_num, d_ff]
+
+        A = -torch.exp(self.A_log.float()) # [d_ff, d_state]
+
+        deltaBCD = self.x_proj(x) # [bs * nvars, patch_num, dt_rank + 2 * d_state + d_ff]
+        # [bs * nvars, patch_num, dt_rank], [bs * nvars, patch_num, d_state], [bs * nvars, patch_num, d_state], [bs * nvars, patch_num, d_ff]
+        delta, B, C, D = torch.split(deltaBCD, [self.configs.dt_rank, self.configs.d_state, self.configs.d_state, self.configs.d_ff], dim=-1)
+        delta = F.softplus(self.dt_proj(delta)) # [bs * nvars, patch_num, d_ff]
+
+        if self.configs.pscan:
+            y = self.selective_scan(x, delta, A, B, C, D)
+        else:
+            y = self.selective_scan_seq(x, delta, A, B, C, D)
+
+        return y
     
-        Returns:
-            output: shape (b, l, d_in)
+    def selective_scan(self, x, delta, A, B, C, D):
+        # x : [bs * nvars, patch_num, d_ff]
+        # Δ : [bs * nvars, patch_num, d_ff]
+        # A : [d_ff, d_state]
+        # B : [bs * nvars, patch_num, d_state]
+        # C : [bs * nvars, patch_num, d_state]
+        # D : [bs * nvars, patch_num, d_ff]
 
+        # y : [bs * nvars, patch_num, d_ff]
+
+        deltaA = torch.exp(delta.unsqueeze(-1) * A) # [bs * nvars, patch_num, d_ff, d_state]
+        deltaB = delta.unsqueeze(-1) * B.unsqueeze(2) # [bs * nvars, patch_num, d_ff, d_state]
+
+        BX = deltaB * (x.unsqueeze(-1)) # [bs * nvars, patch_num, d_ff, d_state]
+        
+        hs = pscan(deltaA, BX)
+        # [bs * nvars, patch_num, d_ff, d_state] @ [bs * nvars, patch_num, d_state, 1] -> [bs * nvars, patch_num, d_ff]
+        y = (hs @ C.unsqueeze(-1)).squeeze(3)
+
+        y = y + D * x
+
+        return y
     
-        """
-        (d_in, n) = self.A_log.shape
-        #print("SSM A_log shape: ", self.A_log.shape)  #(d_inner, d_state)
+    def selective_scan_seq(self, x, delta, A, B, C, D):
+        # x : [bs * nvars, patch_num, d_ff]
+        # Δ : [bs * nvars, patch_num, d_ff]
+        # A : [d_ff, d_state]
+        # B : [bs * nvars, patch_num, d_state]
+        # C : [bs * nvars, patch_num, d_state]
+        # D : [bs * nvars, patch_num, d_ff]
 
-        # Compute ∆ A B C D, the state space parameters.
-        #     A, D are input independent 
-        #     ∆, B, C are input-dependent 
-        
-        A = -torch.exp(self.A_log.float())  #(d_inner, d_state)
-        D = self.D.float()
+        # y : [bs * nvars, patch_num, d_ff]
 
-        #print("SSM A shape: ", A.shape)  #(d_inner, d_state)
-        #print("SSM D shape: ", D.shape)  #(d_inner) 
+        _, L, _ = x.shape
 
-        x_dbl = self.x_proj(x)   
-        #print("SSM x_dbl shape: ", x_dbl.shape)   #(B, num_patches, dt_rank + 2*(d_state))
-        
-        (delta, B, C) = x_dbl.split(split_size=[self.args.dt_rank, n, n], dim=-1)  # delta: (b, num_patches, dt_rank). B, C: (b, num_patches, d_state)
-        #print("SSM delta shape: ", delta.shape)  #(B, num_patches, dt_rank)
-        #print("SSM B shape: ", B.shape)   #(B, num_patches, d_state)
-        #print("SSM C shape: ", C.shape)   #(B, num_patches, d_state)
+        deltaA = torch.exp(delta.unsqueeze(-1) * A) # [bs * nvars, patch_num, d_ff, d_state]
+        deltaB = delta.unsqueeze(-1) * B.unsqueeze(2) # [bs * nvars, patch_num, d_ff, d_state]
 
-        delta = F.softplus(self.dt_proj(delta)) 
-        #print("SSM delta shape after softplus: ", delta.shape)  #(B, num_patches, d_inner)
-        
-        y = self.selective_scan(x, delta, A, B, C, D)
-        #print("SSM output shape: ", y.shape)  #(b, num_patches, d_inner)
+        BX = deltaB * (x.unsqueeze(-1)) # [bs * nvars, patch_num, d_ff, d_state]
 
-        
+        h = torch.zeros(x.size(0), self.configs.d_ff, self.configs.d_state, device=deltaA.device) # (B, ED, N)
+        hs = []
+
+        for t in range(0, L):
+            h = deltaA[:, t] * h + BX[:, t]
+            hs.append(h)
+            
+        hs = torch.stack(hs, dim=1) # [bs * nvars, patch_num, d_ff, d_state]
+        # [bs * nvars, patch_num, d_ff, d_state] @ [bs * nvars, patch_num, d_state, 1] -> [bs * nvars, patch_num, d_ff, 1]
+        y = (hs @ C.unsqueeze(-1)).squeeze(3)
+
+        y = y + D * x
+
         return y
 
-    
-    def selective_scan(self, u, delta, A, B, C, D):
-        (b, l, d_in) = u.shape
-        #print("Selective scan input shape: ", u.shape)  #(B, num_patches, d_inner)
-
-        n = A.shape[1]
-        #print("Selective scan A shape: ", A.shape)  #(d_inner, d_state)
-        
-        # Discretize continuous parameters (A, B)
-        # - A is discretized using zero-order hold (ZOH) discretization.
-        # - B is discretized using a simplified Euler discretization instead of ZOH. 
-        deltaA = torch.exp(einsum(delta, A, 'b l d_in, d_in n -> b l d_in n'))
-        deltaB_u = einsum(delta, B, u, 'b l d_in, b l n, b l d_in -> b l d_in n')
-        #print("Selective scan deltaA shape: ", deltaA.shape) #(B, num_patches, d_inner, d_state)
-        #print("Selective scan deltaB_u shape: ", deltaB_u.shape) #(B, num_patches, d_inner, d_state)
-        
-        
-        x = torch.zeros((b, d_in, n), device=deltaA.device)
-        #print("Selective scan x shape: ", x.shape)  #(B, d_inner, d_state)
-        ys = []    
-        for i in range(l):
-            x = deltaA[:, i] * x + deltaB_u[:, i]
-            y = einsum(x, C[:, i, :], 'b d_in n, b n -> b d_in')
-            ys.append(y)
-        y = torch.stack(ys, dim=1)  
-        #print("Selective scan output shape: ", y.shape) #(b, num_patches, d_inner)
-        
-        y = y + u * D
-        #print("Selective scan output shape after D: ", y.shape) #(b, num_patches, d_inner)
-    
-        return y
-
+# taken straight from https://github.com/johnma2006/mamba-minimal/blob/master/model.py
 class RMSNorm(nn.Module):
     def __init__(self, d_model: int, eps: float = 1e-5):
         super().__init__()
+
         self.eps = eps
         self.weight = nn.Parameter(torch.ones(d_model))
 
     def forward(self, x):
         output = x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps) * self.weight
+
         return output
+
+class FlattenHead(nn.Module):
+    def __init__(self, n_vars, nf, target_window, head_dropout=0):
+        super().__init__()
+        self.n_vars = n_vars
+        self.flatten = nn.Flatten(start_dim=-2)
+        self.linear = nn.Linear(nf, target_window)
+        self.dropout = nn.Dropout(head_dropout)
+
+    def forward(self, x):  # x: [bs, nvars, d_model, patch_num]
+        x = self.flatten(x)
+        x = self.linear(x)
+        x = self.dropout(x)
+        return x
+    
+class Model(nn.Module):
+
+    def __init__(self, configs, patch_len=16, stride=8):
+        """
+        patch_len: int, patch len for patch_embedding
+        stride: int, stride for patch_embedding
+        """
+        super().__init__()
+        self.task_name = configs.task_name
+        self.seq_len = configs.seq_len
+        self.pred_len = configs.pred_len
+        padding = stride
+        # patching and embedding
+        configs.patch_num = int((configs.seq_len - patch_len) / stride + 2)
+        self.patch_embedding = PatchEmbedding(
+            configs.d_model, patch_len, stride, padding, configs.head_dropout)
+        # Encoder
+        self.encoder = CMambaEncoder(configs)
+        # Prediction Head
+        self.head_nf = configs.d_model * configs.patch_num
+        self.head = FlattenHead(configs.enc_in, self.head_nf, configs.pred_len,
+                                head_dropout=configs.head_dropout)
+        #self.apply(init_weights)
+
+    def forward(self, x_enc, x_mark_enc, x_dec, x_mark_dec):
+        # Instance Normalization
+        means = x_enc.mean(1, keepdim=True).detach()
+        x_enc = x_enc - means
+        stdev = torch.sqrt(
+            torch.var(x_enc, dim=1, keepdim=True, unbiased=False) + 1e-5)
+        x_enc /= stdev
+
+        # do patching and embedding
+        x_enc = x_enc.permute(0, 2, 1)
+        # u: [bs * nvars, patch_num, d_model]
+        enc_out, n_vars = self.patch_embedding(x_enc)
+        enc_out = self.encoder(enc_out)
+        enc_out = torch.reshape(
+            enc_out, (-1, n_vars, enc_out.shape[-2], enc_out.shape[-1]))
+        # enc_out: [bs, nvar, d_model, patch_num]
+        enc_out = enc_out.permute(0, 1, 3, 2)
+        # Decoder
+        dec_out = self.head(enc_out)  # dec_out: [bs, nvars, target_window]
+        dec_out = dec_out.permute(0, 2, 1)
+        # De-Normalization
+        dec_out = dec_out * \
+                  (stdev[:, 0, :].unsqueeze(1).repeat(1, self.pred_len, 1))
+        dec_out = dec_out + \
+                  (means[:, 0, :].unsqueeze(1).repeat(1, self.pred_len, 1))
+        return dec_out
