@@ -26,4 +26,5 @@ class Config:
     d_state = 16
     c_out = 3
     reduction = 2
+    gddmlp = True
     
