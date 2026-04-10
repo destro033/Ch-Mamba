@@ -33,6 +33,22 @@ best_val_loss = float('inf')
 epochs_no_improve = 0
 best_model_wts = copy.deepcopy(model.state_dict())
 
+def channel_mixup(x, sigma=0.1):
+    """
+    x: [B, L, C] #(batches, sequence length, num of channels)
+    returns: [B, L, C]
+    """
+    B, L, C = x.shape
+    perm = torch.randperm(C, device=x.device)
+    mix = torch.normal(
+        mean=0.0,
+        std=sigma,
+        size=(B, C),
+        device=x.device
+    ).unsqueeze(1)  # [B, 1, C]
+
+    return x + x[:, :, perm] * mix
+
 for epoch in range(epochs):
     model.train()
     running_loss = 0.0
@@ -40,6 +56,10 @@ for epoch in range(epochs):
 
     for (X_batch, y_batch) in train_loader:
         X_batch, y_batch = X_batch.to(device), y_batch.to(device)
+
+        if configs.use_channel_mixup:
+            X_batch = channel_mixup(X_batch, configs.sigma=sigma)
+            y_batch = channel_mixup(y_batch, configs.sigma=sigma)
 
         optimizer.zero_grad()
         output = model(X_batch, None, None, None)
