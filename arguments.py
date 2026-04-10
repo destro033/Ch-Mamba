@@ -6,7 +6,7 @@ class Config:
     d_model = 128
     patch_num = 12
     e_layers = 2
-    d_ff = 512
+    d_ff = 256
     dropout = 0.1
     e_layers = 2 
     patch_len = 16
@@ -19,4 +19,11 @@ class Config:
     d_ff = 256
     dt_init = "random"
     d_state = 16
+    dt_max = 0.1
+    dt_min = 0.001
+    dt_init_floor = 1e-4
+    dt_scale = 1.0
+    d_state = 16
+    c_out = 3
+    reduction = 2
     
