@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 
 from model_patchtst import Model
 from arguments_patchtst import Config
-from evaluation_patchtst import (
+from evaluation import (
     load_test_dataframe,
     compute_mae_for_flight,
     compute_ade_for_flight,
