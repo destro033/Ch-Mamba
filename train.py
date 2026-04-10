@@ -3,25 +3,27 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from data_preprocessing import create_dataloaders_from_csv
-from model import CMamba
-from arguments import args
+from model import Model
+from arguments import Config
 import pandas as pd
 import joblib
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print("Using:", device)
 
+configs = Config()
+
 train_loader, val_loader, scaler = create_dataloaders_from_csv(
     csv_path="Drone Onboard Multi-Modal Feature-Based Visual Odometry Dataset.csv",
-    input_length=args.seq_len,
-    forecast_length=args.forecast_len,
+    input_length=configs.seq_len,
+    forecast_length=configs.pred_len,
     batch_size=32
 )
 
 train_losses = []
 val_losses = []
 
-model = CMamba(args).to(device)
+model = Model(configs).to(device)
 criterion = nn.MSELoss()
 optimizer = optim.Adam(model.parameters(), lr=0.0001)
 epochs = 200
@@ -40,7 +42,7 @@ for epoch in range(epochs):
         X_batch, y_batch = X_batch.to(device), y_batch.to(device)
 
         optimizer.zero_grad()
-        output = model(X_batch)
+        output = model(X_batch, None, None, None)
         loss = criterion(output, y_batch)
         loss.backward()
 
@@ -58,7 +60,7 @@ for epoch in range(epochs):
     with torch.no_grad():
         for (X_batch, y_batch) in val_loader:
             X_batch, y_batch = X_batch.to(device), y_batch.to(device)
-            output = model(X_batch)
+            output = model(X_batch, None, None, None)
             loss = criterion(output, y_batch)
             val_loss += loss.item()
 
@@ -82,12 +84,12 @@ model.load_state_dict(best_model_wts)
 print(f"Best model restored (val loss = {best_val_loss:.4f})")
 
 #save the weights of the best model
-torch.save(model.state_dict(), "cmamba_best_model.pth")
-print("Model weights saved to cmamba_best_model.pth")
+torch.save(model.state_dict(), "patchtst_best_model.pth")
+print("Model weights saved to patchtst_best_model.pth")
 
 #save scaler
-joblib.dump(scaler, "scaler.pkl")
-print("Scaler saved to scaler.pkl")
+joblib.dump(scaler, "scaler_patchtst.pkl")
+print("Scaler saved to scaler_patchtst.pkl")
 
 #save losses into a csv file
 results_df = pd.DataFrame({
@@ -99,4 +101,4 @@ results_df = pd.DataFrame({
 
 results_df.to_csv("training_results_mamba.csv", index=False)
 
-print("Results saved to training_results_mamba.csv")
+print("Results saved to training_results_mamba.sv")
