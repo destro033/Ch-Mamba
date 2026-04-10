@@ -84,12 +84,12 @@ model.load_state_dict(best_model_wts)
 print(f"Best model restored (val loss = {best_val_loss:.4f})")
 
 #save the weights of the best model
-torch.save(model.state_dict(), "patchtst_best_model.pth")
-print("Model weights saved to patchtst_best_model.pth")
+torch.save(model.state_dict(), "mamba_best_model.pth")
+print("Model weights saved to mamba_best_model.pth")
 
 #save scaler
-joblib.dump(scaler, "scaler_patchtst.pkl")
-print("Scaler saved to scaler_patchtst.pkl")
+joblib.dump(scaler, "scaler_mamba.pkl")
+print("Scaler saved to scaler_mamba.pkl")
 
 #save losses into a csv file
 results_df = pd.DataFrame({
