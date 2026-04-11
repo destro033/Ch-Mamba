@@ -53,7 +53,7 @@ class PatchEmbedding(nn.Module):
         x = self.padding_patch_layer(x)
         print("IN PATCH EMBEDDING after padding: ", x.shape)
         x = x.unfold(dimension=-1, size=self.patch_len, step=self.stride)
-        print("IN PATCH EMBEDDING after unfold: ", x.shape
+        print("IN PATCH EMBEDDING after unfold: ", x.shape)
         x = torch.reshape(x, (x.shape[0] * x.shape[1], x.shape[2], x.shape[3]))
         print("IN PATCH EMBEDDING after reshape: ", x.shape)
         # Input encoding
