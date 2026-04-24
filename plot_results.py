@@ -8,8 +8,8 @@ from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
 MODEL_A_PATH = "cmamba_results.npz"
 MODEL_B_PATH = "patchtst_results.npz"
 
-MODEL_A_NAME = "cmamba"
-MODEL_B_NAME = "patchtst"
+MODEL_A_NAME = "C-Mamba"
+MODEL_B_NAME = "PatchTST"
 
 
 # =========================
