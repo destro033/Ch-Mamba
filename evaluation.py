@@ -11,25 +11,6 @@ def load_test_dataframe(csv_path, sep=";"):
     return pd.read_csv(csv_path, sep=sep)
 
 
-def prepare_flight_loader(
-    df,
-    flight_id,
-    feature_cols,
-    scaler,
-    input_length=96,
-    forecast_length=96,
-    batch_size=32
-):
-    data_raw = df.loc[df["uid"] == flight_id, feature_cols].values
-    data_scaled = scaler.transform(data_raw)
-
-    dataset = TimeSeriesDataset(data_scaled, input_length, forecast_length)
-    loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
-
-    return loader
-
-
-
 
 def evaluate_flights_full(
     model,
