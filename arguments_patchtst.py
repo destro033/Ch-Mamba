@@ -13,3 +13,9 @@ class Config:
     e_layers = 2 
     patch_len = 16
     stride = 8
+
+    #training settings 
+    batch_size = 32
+    epochs = 200
+    patience = 20
+    lr = 0.0001
