@@ -1,15 +1,14 @@
-
-
 import numpy as np
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+from mpl_toolkits.mplot3d import Axes3D 
+from matplotlib.ticker import MaxNLocator 
 
 
 MODEL_A_PATH = "cmamba_results.npz"
 MODEL_B_PATH = "patchtst_results.npz"
 
-MODEL_A_NAME = "C-Mamba"
-MODEL_B_NAME = "PatchTST"
+MODEL_A_NAME = "cmamba"
+MODEL_B_NAME = "patchtst"
 
 
 # =========================
@@ -42,8 +41,24 @@ x = np.arange(len(labels))
 width = 0.35
 
 plt.figure(figsize=(7, 4))
-plt.bar(x - width / 2, mae_a, width, label=MODEL_A_NAME)
-plt.bar(x + width / 2, mae_b, width, label=MODEL_B_NAME)
+
+bars_a = plt.bar(x - width / 2, mae_a, width, label=MODEL_A_NAME)
+bars_b = plt.bar(x + width / 2, mae_b, width, label=MODEL_B_NAME)
+
+def add_bar_labels(bars):
+    for bar in bars:
+        height = bar.get_height()
+        plt.text(
+            bar.get_x() + bar.get_width() / 2,
+            height,
+            f"{height:.2f}",
+            ha="center",
+            va="bottom",
+            fontsize=9
+        )
+
+add_bar_labels(bars_a)
+add_bar_labels(bars_b)
 
 plt.xticks(x, labels)
 plt.ylabel("MAE (m)")
@@ -130,6 +145,16 @@ def plot_3d_flight(
         pred_model_b[:, forecast_step, z_idx],
         label=MODEL_B_NAME
     )
+
+    # show only around 4 tick/grid lines per axis
+    ax.xaxis.set_major_locator(MaxNLocator(4))
+    ax.yaxis.set_major_locator(MaxNLocator(4))
+    ax.zaxis.set_major_locator(MaxNLocator(4))
+
+    # disable scientific notation and offset like +3.3e1
+    ax.ticklabel_format(axis="x", style="plain", useOffset=False)
+    ax.ticklabel_format(axis="y", style="plain", useOffset=False)
+    ax.ticklabel_format(axis="z", style="plain", useOffset=False)
 
     ax.set_xlabel("X")
     ax.set_ylabel("Y")
