@@ -32,6 +32,53 @@ gt_b = b["gt"]
 counts = a["flight_sample_counts"]
 flight_ids = a["flight_ids"]
 
+ade_a = [
+    a["ade_first_step"],
+    a["ade_96"],
+    a["ade_last_step"]
+]
+
+ade_b = [
+    b["ade_first_step"],
+    b["ade_96"],
+    b["ade_last_step"]
+]
+
+labels = ["First", "Average (ADE)", "Final (FDE)"]
+x = np.arange(len(labels))
+width = 0.35
+
+plt.figure(figsize=(7, 4))
+
+bars_a = plt.bar(x - width / 2, ade_a, width, label=MODEL_A_NAME)
+bars_b = plt.bar(x + width / 2, ade_b, width, label=MODEL_B_NAME)
+
+def add_bar_labels(bars):
+    for bar in bars:
+        height = bar.get_height()
+        plt.text(
+            bar.get_x() + bar.get_width() / 2,
+            height,
+            f"{height:.2f}",
+            ha="center",
+            va="bottom",
+            fontsize=9
+        )
+
+add_bar_labels(bars_a)
+add_bar_labels(bars_b)
+
+plt.xticks(x, labels)
+plt.ylabel("Euclidean Error (m)")
+plt.title("Error Comparison: First Step, ADE, and Final Step (FDE)")
+plt.legend()
+plt.grid(axis="y", alpha=0.3)
+plt.tight_layout()
+plt.savefig("ade_fde_comparison.pdf", bbox_inches="tight")
+
+
+
+
 
 # =========================
 # 1. MAE X/Y/Z comparison
