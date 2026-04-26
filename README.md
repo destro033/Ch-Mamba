@@ -1,4 +1,5 @@
 # C-Mamba and PatchTST
+
 In this repo we used two multivariate time series forecasting models, the official codes can be found here:
 
 1. [C-Mamba](https://github.com/zclzcl0223/CMamba)
@@ -6,6 +7,20 @@ In this repo we used two multivariate time series forecasting models, the offici
 2. [PatchTST](https://github.com/PatchTST/PatchTST)
 
 These models are combined into a single file for the purpose of this work
+
+## Installation
+
+To use the models, you will need these libraries:
+- `torch`
+- `numpy`
+- `pandas`
+- `scikit-learn`
+- `matplotlib`
+- `joblib`
+If necessary, you can install them using pip:
+```bash
+pip install torch pandas numpy matplotlib scikit-learn joblib
+```
 
 The full training code is on FULLTRAINING.py
 
