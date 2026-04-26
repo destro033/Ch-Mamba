@@ -22,7 +22,7 @@ class Config:
     dt_scale = 1.0   #default
     d_state = 16    #dimension of state space
     c_out = 3       #have to be the same as enc_in
-    reduction = 2   #reduction rate (expansion rate in paper) for GDD-MLP
+    reduction = 2   #reduction rate for GDD-MLP
     gddmlp = True   #whether or not to use channel attention
     pscan = True    #whether or not to use parallel scanning for faster computation
     sigma = 0.1     #standard deviation for Channel Mixup
