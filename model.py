@@ -1,6 +1,6 @@
 import torch
 from torch import nn
-
+from pscan import pscan
 import math
 import torch.nn.functional as F
 
