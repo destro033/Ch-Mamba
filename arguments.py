@@ -22,13 +22,13 @@ class Config:
     c_out = 3       #have to be the same as enc_in
     reduction = 2   #reduction rate for GDD-MLP
     gddmlp = True   #whether or not to use channel attention
-    pscan = True    #whether or not to use parallel scanning for faster computation
+    pscan = True    #whether or not to use parallel scanning for faster computation in training
     sigma = 0.1     #standard deviation for Channel Mixup
     use_channel_mixup = True #whether or not to use channel mixup
 
     #training settings 
     batch_size = 32
     epochs = 200
-    patience = 20 #how many epochs without improvment in validation loss to wait
+    patience = 20 #how many epochs without improvement in validation loss to wait
     lr = 0.0001   #learning rate
     
