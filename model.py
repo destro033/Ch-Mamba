@@ -1,6 +1,6 @@
 import torch
 from torch import nn
-from pscan import pscan
+
 import math
 import torch.nn.functional as F
 
@@ -49,13 +49,9 @@ class PatchEmbedding(nn.Module):
     def forward(self, x):
         # do patching
         n_vars = x.shape[1]
-        print("IN PATCH EMBEDDING n_vars: " ,n_vars)
         x = self.padding_patch_layer(x)
-        print("IN PATCH EMBEDDING after padding: ", x.shape)
         x = x.unfold(dimension=-1, size=self.patch_len, step=self.stride)
-        print("IN PATCH EMBEDDING after unfold: ", x.shape)
         x = torch.reshape(x, (x.shape[0] * x.shape[1], x.shape[2], x.shape[3]))
-        print("IN PATCH EMBEDDING after reshape: ", x.shape)
         # Input encoding
         x = self.value_embedding(x) + self.position_embedding(x)
 
@@ -121,7 +117,7 @@ class CMambaEncoder(nn.Module):
 
         for layer in self.layers:
             x = layer(x)
-        print("AFTER CMAMBA ENCODER SHAPE: ", x.shape)
+
         x = F.silu(x)
 
         return x
@@ -146,8 +142,7 @@ class CMambaBlock(nn.Module):
 
         # output : [bs * nvars, patch_num, d_model]
 
-        output = self.mixer(self.norm(x))
-        print("AFTER CMAMBA BLOCK: ", output.shape) 
+        output = self.mixer(self.norm(x)) 
 
         if self.gddmlp:
             # output : [bs, nvars, patch_num, d_model]
@@ -156,7 +151,6 @@ class CMambaBlock(nn.Module):
             # output : [bs * nvars, patch_num, d_model]
             output = output.reshape(-1, output.shape[-2], output.shape[-1])
         output = self.dropout(output)
-        print("AFTER GDDMLP: ", output.shape)
         output += x
         return output
 
@@ -210,31 +204,19 @@ class MambaBlock(nn.Module):
         # y : [bs * nvars, patch_num, d_model]
 
         _, L, _ = x.shape
-        print("Sequence length L:", L)
-
 
         xz = self.in_proj(x) # [bs * nvars, patch_num, 2 * d_ff]
         x, z = xz.chunk(2, dim=-1) # [bs * nvars, patch_num, d_ff], [bs * nvars, patch_num, d_ff]
 
-        print("After in_proj (xz) shape:", xz.shape)
-        print("x after chunk shape:", x.shape)  # [B*nvars, patch_num, d_ff]
-        print("z after chunk shape:", z.shape)  # [B*nvars, patch_num, d_ff]
-        
         # x branch
         x = F.silu(x)
         y = self.ssm(x)
 
-        print("x after silu shape:", x.shape)
-        print("y (after ssm) shape:", y.shape)
-        
         # z branch
         z = F.silu(z)
-        print("z after silu shape:", z.shape)
-        
+
         output = y * z
-        print("After elementwise multiply (y * z):", output.shape)
         output = self.out_proj(output) # [bs * nvars, patch_num, d_ff]
-        print("After out_proj shape:", output.shape)  # [B*nvars, patch_num, d_model]
 
         return output
     
@@ -244,22 +226,12 @@ class MambaBlock(nn.Module):
         # y : [bs * nvars, patch_num, d_ff]
 
         A = -torch.exp(self.A_log.float()) # [d_ff, d_state]
-        print("A shape:", A.shape)
 
         deltaBCD = self.x_proj(x) # [bs * nvars, patch_num, dt_rank + 2 * d_state + d_ff]
         # [bs * nvars, patch_num, dt_rank], [bs * nvars, patch_num, d_state], [bs * nvars, patch_num, d_state], [bs * nvars, patch_num, d_ff]
-
-        print("deltaBCD shape:", deltaBCD.shape) 
-        
         delta, B, C, D = torch.split(deltaBCD, [self.configs.dt_rank, self.configs.d_state, self.configs.d_state, self.configs.d_ff], dim=-1)
         delta = F.softplus(self.dt_proj(delta)) # [bs * nvars, patch_num, d_ff]
 
-        print("delta (before dt_proj) shape:", delta.shape)  # [B*nvars, patch_num, dt_rank]
-        print("B shape:", B.shape)                          # [B*nvars, patch_num, d_state]
-        print("C shape:", C.shape)                          # [B*nvars, patch_num, d_state]
-        print("D shape:", D.shape)                          # [B*nvars, patch_num, d_ff]
-        print("delta (after dt_proj) shape:", delta.shape)
-        
         if self.configs.pscan:
             y = self.selective_scan(x, delta, A, B, C, D)
         else:
@@ -280,9 +252,7 @@ class MambaBlock(nn.Module):
         deltaA = torch.exp(delta.unsqueeze(-1) * A) # [bs * nvars, patch_num, d_ff, d_state]
         deltaB = delta.unsqueeze(-1) * B.unsqueeze(2) # [bs * nvars, patch_num, d_ff, d_state]
 
-        
         BX = deltaB * (x.unsqueeze(-1)) # [bs * nvars, patch_num, d_ff, d_state]
-        
         
         hs = pscan(deltaA, BX)
         # [bs * nvars, patch_num, d_ff, d_state] @ [bs * nvars, patch_num, d_state, 1] -> [bs * nvars, patch_num, d_ff]
@@ -307,30 +277,21 @@ class MambaBlock(nn.Module):
         deltaA = torch.exp(delta.unsqueeze(-1) * A) # [bs * nvars, patch_num, d_ff, d_state]
         deltaB = delta.unsqueeze(-1) * B.unsqueeze(2) # [bs * nvars, patch_num, d_ff, d_state]
 
-        print("SELECTIVE SCAN deltaA shape:", deltaA.shape)
-        print("SELECTIVE SCAN deltaB shape:", deltaB.shape)
-        
         BX = deltaB * (x.unsqueeze(-1)) # [bs * nvars, patch_num, d_ff, d_state]
-        print("SELECTIVE SCAN BX shape:", BX.shape)
 
         h = torch.zeros(x.size(0), self.configs.d_ff, self.configs.d_state, device=deltaA.device) # (B, ED, N)
         hs = []
 
-        print("SELECTIVE SCAN Initial h shape:", h.shape) 
-        
         for t in range(0, L):
             h = deltaA[:, t] * h + BX[:, t]
             hs.append(h)
             
         hs = torch.stack(hs, dim=1) # [bs * nvars, patch_num, d_ff, d_state]
-        print("SELECTIVE SCAN hs shape after stack:", hs.shape)
         # [bs * nvars, patch_num, d_ff, d_state] @ [bs * nvars, patch_num, d_state, 1] -> [bs * nvars, patch_num, d_ff, 1]
         y = (hs @ C.unsqueeze(-1)).squeeze(3)
-        print("y shape after matmul+squeeze:", y.shape)
-        
+
         y = y + D * x
-        print("Final y shape:", y.shape)
-        
+
         return y
 
 # taken straight from https://github.com/johnma2006/mamba-minimal/blob/master/model.py
@@ -356,11 +317,8 @@ class FlattenHead(nn.Module):
 
     def forward(self, x):  # x: [bs, nvars, d_model, patch_num]
         x = self.flatten(x)
-        print("INSIDE FLATTENHEAD AFTER flatten: ", x.shape)
         x = self.linear(x)
-        print("INSIDE FLATTENHEAD AFTER linear: ", x.shape)
         x = self.dropout(x)
-        print("INISDE FLATTENHEAD after dropout: ", x.shape)
         return x
     
 class Model(nn.Module):
@@ -389,8 +347,6 @@ class Model(nn.Module):
 
     def forward(self, x_enc, x_mark_enc, x_dec, x_mark_dec):
         # Instance Normalization
-        print("Original input x_enc:", x_enc.shape)  # [B, L, C]
-        
         means = x_enc.mean(1, keepdim=True).detach()
         x_enc = x_enc - means
         stdev = torch.sqrt(
@@ -399,28 +355,19 @@ class Model(nn.Module):
 
         # do patching and embedding
         x_enc = x_enc.permute(0, 2, 1)
-        print("after permute input x_enc", x_enc.shape)  # [B, C, L]
         # u: [bs * nvars, patch_num, d_model]
         enc_out, n_vars = self.patch_embedding(x_enc)
-        print("enc_out shape after embedding:", enc_out.shape)
-        print("n_vars:", n_vars)  
         enc_out = self.encoder(enc_out)
-        print("after encoder: ", enc_out.shape)
         enc_out = torch.reshape(
             enc_out, (-1, n_vars, enc_out.shape[-2], enc_out.shape[-1]))
         # enc_out: [bs, nvar, d_model, patch_num]
-        print("after reshape: ", enc_out.shape)
         enc_out = enc_out.permute(0, 1, 3, 2)
         # Decoder
-        print("after permute after reshape: ", enc_out.shape)
         dec_out = self.head(enc_out)  # dec_out: [bs, nvars, target_window]
-        print("after flatten head: ", dec_out.shape)
         dec_out = dec_out.permute(0, 2, 1)
         # De-Normalization
-        print("after flatten after permute: ", dec_out.shape)
         dec_out = dec_out * \
                   (stdev[:, 0, :].unsqueeze(1).repeat(1, self.pred_len, 1))
         dec_out = dec_out + \
                   (means[:, 0, :].unsqueeze(1).repeat(1, self.pred_len, 1))
-        print("result shape: ", dec_out.shape)
         return dec_out
