@@ -16,5 +16,5 @@ class Config:
     #training settings 
     batch_size = 32
     epochs = 200
-    patience = 20
-    lr = 0.0001
+    patience = 20 #how many epochs to wait without validation loss improvement
+    lr = 0.0001 #learning rate
