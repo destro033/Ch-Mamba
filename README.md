@@ -23,23 +23,22 @@ If necessary, you can install them using pip:
 pip install torch pandas numpy matplotlib scikit-learn joblib
 ```
 
-The full training code is on FULLTRAINING.py
-
-The full testing code is on FULLTESTING.py
-
-You can also build these codes manually as explained below.
-
 ## Training Procedure
-In order to build the code for training the model, put the following codes in the following order:
-1. Imports.py
-2. (Colab) Upload dataset
-3. Preprocessing.py 
-4. Model.py
-5. Arguments.py
-6. Training.py
-7. (Optional) Epochs.py
 
-## Testing Procedure
-If you are planning to use the pretrained model on the dataset mentioned put the following codes in order:
-1. Imports.py
-2. (Colab) Upload files.py here upload the args.pth, scaler.pkl, weights.pth
+In order to train the models, download as zip folder all the codes and store them in single folder.
+For C-Mamba training you can change any parameters (if needed) from arguments.py
+For PatchTST training you can change any parameters from arguments_patchtst.py. In these files hyperparameters of each model with their descriptions is provided.
+After changes save these files and run train.py for C-Mamba or run train_patchtst.py for PatchTST.
+Make sure that the dataset on here is downloaded as CSV in the same folder as the other codes. After training, the code will produce the files: mamba_best_model.pth and scaler_mamba.pkl for C-Mamba, and patchtst_best_model.pth and scaler_patchtst.pkl for PatchTST, these files contain the best weights and scaler for these models to be used in testing
+.Also, the code will produce CSV file containing the train/val losses for each epoch. These files contain the best weights and scaler for these models to be used in testing
+
+## Testing Procedure and Plotting
+
+In order to test and plot the results of the models, download as zip folder all the codes and store them in single folder.
+For C-Mamba, run test.py. After running the code cmamba_results.npz file will be produced, this file will be needed for plotting of the results.
+For PatchTST, run test_patchtst.py. After running the code patchtst_results.npz file will be produced, this file will be needed for plotting of the results. 
+Note that both of these files are necessary for plotting.
+
+After getting both .npz files, run plot_results.py code to plot the results (make sure these files are called cmamba_results.npz and patchtst_results.npz and make sure that these files are in the same folder as plot_results.py)
+After finishing, the metrics will appear and will be downloaded as PDFs as well.
+
