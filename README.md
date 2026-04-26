@@ -55,12 +55,25 @@ The training procedure is as follows:
 
 ## Testing Procedure and Plotting
 
-In order to test and plot the results of the models, download as zip folder all the codes and store them in the same folder (in the zip there are also the pretrained models as mentioned in training procedure).
-For C-Mamba, run test.py. After running the code cmamba_results.npz file will be produced, this file will be needed for the plotting of the results.
-For PatchTST, run test_patchtst.py. After running the code patchtst_results.npz file will be produced, this file will be needed for plotting of the results as well. 
-Both files will be automitically saved to your working folder
-Note that both of these files are necessary for plotting.
+The testing procedure is as follows:
 
-After getting both .npz files, run plot_results.py code to plot the results (make sure these files are called cmamba_results.npz and patchtst_results.npz and make sure that these files are in the same folder as plot_results.py)
-After finishing, the metrics will appear and will be downloaded as PDFs as well.
+1. Download the repository and extract all files into a single folder. The folder already includes the pretrained models (`mamba_best_model.pth`, `scaler_mamba.pkl`, `patchtst_best_model.pth`, and `scaler_patchtst.pkl`)
+   
+3. Run testing for each model:
+   - For **C-Mamba**:
+     ```bash
+     python test.py
+     ```
+     → produces `cmamba_results.npz`
 
+   - For **PatchTST**:
+     ```bash
+     python test_patchtst.py
+     ```
+     → produces `patchtst_results.npz`
+
+4. Both `.npz` files will be automatically saved in the working directory.
+
+5. Run the plotting script:
+   ```bash
+   python plot_results.py
