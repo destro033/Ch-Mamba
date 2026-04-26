@@ -1,5 +1,9 @@
-# Ch-Mamba
-The full implementation code for Ch-Mamba code. It includes all the codes in order to use the model to train and test the model using  multivariate time series forecasting datasets. The code as it is, will work with the following dataset https://zenodo.org/records/15089283. 
+# C-Mamba and PatchTST
+In this repo we used two multivariate time series forecasting models, the official codes can be found here:
+1.[C-Mamba](https://github.com/zclzcl0223/CMamba)
+2.[PatchTST](https://github.com/PatchTST/PatchTST)
+
+These models are combined into a single file for the purpose of this work
 
 The full training code is on FULLTRAINING.py
 
