@@ -4,11 +4,11 @@ class Config:
     pred_len = 96   #forecast length
     enc_in = 3      #number of variables in the data
     d_model = 128   #dimension of the model 
-    n_heads = 4     
+    n_heads = 4     #num of heads
     e_layers = 2    #how many blocks 
     d_ff = 512      #inner dimension
     dropout = 0.1  
-    factor = 1
+    factor = 1      #attention factor
     activation = "gelu" #activation function
     patch_len = 16  #patch length
     stride = 8      #window for patching
