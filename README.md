@@ -57,9 +57,8 @@ The training procedure is as follows:
 
 The testing procedure is as follows:
 
-1. Download the repository and extract all files into a single folder. The folder already includes the pretrained models (`mamba_best_model.pth`, `scaler_mamba.pkl`, `patchtst_best_model.pth`, and `scaler_patchtst.pkl`). If you trained the model from the beginning make sure they are have the same names
-
-2.Download the dataset from https://zenodo.org/records/15089283 and place the CSV file in the same folder as the code.
+1. Download the repository and extract all files into a single folder. The folder already includes the pretrained models (`mamba_best_model.pth`, `scaler_mamba.pkl`, `patchtst_best_model.pth`, and `scaler_patchtst.pkl`). If you trained the model from the beginning make sure they are have the same names.
+2. Download the dataset from https://zenodo.org/records/15089283 and place the CSV file in the same folder as the code.
    
 4. Run testing for each model:
    - For **C-Mamba**:
