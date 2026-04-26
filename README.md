@@ -5,7 +5,9 @@ In this repo we used two multivariate time series forecasting models, the offici
 2. [PatchTST](https://github.com/PatchTST/PatchTST)
    
 For PatchTST, we adopted the model from [here](https://github.com/thuml/Time-Series-Library)
-These models are combined into a single file for the purpose of this work C-Mamba is located in `model.py`, whereas PatchTST is located in `model_patchtst.py`
+
+These models are combined into a single file for the purpose of this work.
+C-Mamba is located in `model.py`, whereas PatchTST is located in `model_patchtst.py`
 
 ## Installation
 
