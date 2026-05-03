@@ -32,7 +32,7 @@ The training procedure is as follows:
 
 2. If necessary, edit the model hyperparameters:
    - For **C-Mamba**, edit `arguments.py`
-   - For **PatchTST**, edit `arguments_patchtst.py`
+   - For **PatchTST**, edit `arguments_patchtst.py` and then save the files
 
 3. Download the dataset from https://zenodo.org/records/15089283 and place the CSV file in the same folder as the code.
 
