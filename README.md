@@ -30,7 +30,7 @@ pip install torch pandas numpy matplotlib scikit-learn joblib
 
 The training procedure is as follows:
 
-1. Download the repository and extract all files into a single folder.
+1. Download the repository and extract all files into a single folder. **Note:** If you want to train the models, delete  `mamba_best_model.pth`, `scaler_mamba.pkl`, `patchtst_best_model.pth`, and `scaler_patchtst.pkl`  files (which already exist in this repo) beforehand, as they will be overwritten after training.
 
 2. If necessary, edit the model hyperparameters:
    - For **C-Mamba**, edit `arguments.py`
